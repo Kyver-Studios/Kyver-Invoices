@@ -30,6 +30,9 @@ dependencies {
 
     implementation("com.stripe:stripe-java:29.4.0")
     implementation("com.paypal.sdk:rest-api-sdk:1.14.0")
+
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:javase:3.5.3")
 }
 
 application {

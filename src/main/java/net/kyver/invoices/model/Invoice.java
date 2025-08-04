@@ -44,7 +44,6 @@ public class Invoice {
         this.currency = currency;
     }
 
-    // Getters and setters
     public UUID getInvoiceId() { return invoiceId; }
     public void setInvoiceId(UUID invoiceId) { this.invoiceId = invoiceId; }
 

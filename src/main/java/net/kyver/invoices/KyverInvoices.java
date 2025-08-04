@@ -4,6 +4,7 @@ import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.OnlineStatus;
 import net.dv8tion.jda.api.entities.Activity;
+import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.requests.GatewayIntent;
 import net.kyver.invoices.data.DatabaseManager;
 import net.kyver.invoices.manager.ConfigManager;
@@ -12,12 +13,16 @@ import net.kyver.invoices.manager.LoggingManager;
 public class KyverInvoices {
 
     private static final LoggingManager logger = LoggingManager.getLogger(KyverInvoices.class);
+
     private static JDA jda;
     private static DatabaseManager databaseManager;
     private static ConfigManager configManager;
 
+    private static KyverInvoices instance;
+
     public static void main(String[] args) {
         logger.info("Starting Kyver Invoices Discord Bot...");
+        instance = new KyverInvoices();
 
         try {
             logger.info("Loading configuration...");
@@ -79,5 +84,13 @@ public class KyverInvoices {
 
     public static ConfigManager getConfigManager() {
         return configManager;
+    }
+
+    public static KyverInvoices getInstance() {
+        return instance;
+    }
+
+    public static LoggingManager getLogger() {
+        return logger;
     }
 }

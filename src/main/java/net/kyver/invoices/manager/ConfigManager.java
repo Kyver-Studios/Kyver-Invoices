@@ -1,7 +1,9 @@
 package net.kyver.invoices.manager;
 
+import net.dv8tion.jda.api.entities.Guild;
 import net.kyver.invoices.KyverInvoices;
 
+import java.awt.Color;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -108,6 +110,34 @@ public class ConfigManager {
 
     public String getString(String key, String defaultValue) {
         return config.getProperty(key, defaultValue);
+    }
+
+    public Color getMainColor() {
+        String colorHex = config.getProperty("bot.main-color", "#E53935");
+        return Color.decode(colorHex);
+    }
+
+    public Color getSuccessColor() {
+        String colorHex = config.getProperty("bot.success-color", "#43A047");
+        return Color.decode(colorHex);
+    }
+
+    public Color getErrorColor() {
+        String colorHex = config.getProperty("bot.error-color", "#D32F2F");
+        return Color.decode(colorHex);
+    }
+
+    public String getBotName() {
+        return config.getProperty("bot.name", "KyverInvoices");
+    }
+
+    public Guild getGuild() {
+        String guildId = config.getProperty("bot.guild_id", "YOUR_GUILD_ID");
+        if (guildId.equals("YOUR_GUILD_ID") || guildId.isEmpty()) {
+            logger.warn("Guild ID not set in config, returning null");
+            return null;
+        }
+        return KyverInvoices.getJDA().getGuildById(guildId);
     }
 
     public void reload() {
