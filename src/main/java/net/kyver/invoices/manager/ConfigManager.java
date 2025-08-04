@@ -2,20 +2,21 @@ package net.kyver.invoices.manager;
 
 import net.dv8tion.jda.api.entities.Guild;
 import net.kyver.invoices.KyverInvoices;
+import org.yaml.snakeyaml.Yaml;
 
 import java.awt.Color;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.Properties;
+import java.io.InputStream;
+import java.util.Map;
 
 public class ConfigManager {
     private static ConfigManager instance;
-    private final Properties config;
+    private Map<String, Object> config;
     private static final LoggingManager logger = LoggingManager.getLogger(ConfigManager.class);
 
     private ConfigManager() {
-        this.config = new Properties();
         loadConfig();
     }
 
@@ -28,111 +29,162 @@ public class ConfigManager {
 
     private void loadConfig() {
         try {
+            Yaml yaml = new Yaml();
+            InputStream inputStream;
+
             File configFile = new File("config.yml");
-            if (!configFile.exists()) {
-                configFile = new File(getClass().getClassLoader().getResource("config.yml").getFile());
+            if (configFile.exists()) {
+                inputStream = new FileInputStream(configFile);
+                logger.info("Loading configuration from external config.yml");
+            } else {
+                inputStream = getClass().getClassLoader().getResourceAsStream("config.yml");
+                logger.info("Loading configuration from resource config.yml");
             }
 
-            if (configFile.exists()) {
-                config.load(new FileInputStream(configFile));
+            if (inputStream != null) {
+                config = yaml.load(inputStream);
+                inputStream.close();
                 logger.info("Configuration loaded successfully");
             } else {
-                logger.warn("Config file not found, using defaults");
+                logger.error("Config file not found");
+                config = Map.of();
             }
         } catch (IOException e) {
             logger.error("Failed to load configuration", e);
+            config = Map.of();
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private Object getNestedValue(String path) {
+        String[] keys = path.split("\\.");
+        Object current = config;
+
+        for (String key : keys) {
+            if (current instanceof Map) {
+                current = ((Map<String, Object>) current).get(key);
+                if (current == null) {
+                    return null;
+                }
+            } else {
+                return null;
+            }
+        }
+        return current;
+    }
+
+    String getString(String path, String defaultValue) {
+        Object value = getNestedValue(path);
+        return value != null ? value.toString() : defaultValue;
+    }
+
+    private boolean getBoolean(String path, boolean defaultValue) {
+        Object value = getNestedValue(path);
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        if (value != null) {
+            return Boolean.parseBoolean(value.toString());
+        }
+        return defaultValue;
+    }
+
+    private int getInt(String path, int defaultValue) {
+        Object value = getNestedValue(path);
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        if (value != null) {
+            try {
+                return Integer.parseInt(value.toString());
+            } catch (NumberFormatException e) {
+                logger.warn("Invalid integer value for " + path + ": " + value);
+            }
+        }
+        return defaultValue;
+    }
+
     public boolean isStripeEnabled() {
-        return Boolean.parseBoolean(config.getProperty("payment.stripe.enabled", "false"));
+        return getBoolean("gateways.stripe.enabled", false);
     }
 
     public boolean isPayPalEnabled() {
-        return Boolean.parseBoolean(config.getProperty("payment.paypal.enabled", "false"));
+        return getBoolean("gateways.paypal.enabled", false);
     }
 
     public String getStripeApiKey() {
-        return config.getProperty("payment.stripe.api_key", "");
+        return getString("gateways.stripe.public_key", "");
     }
 
     public String getStripeSecretKey() {
-        return config.getProperty("payment.stripe.secret_key", "");
+        return getString("gateways.stripe.secret_key", "");
     }
 
     public String getStripeWebhookSecret() {
-        return config.getProperty("payment.stripe.webhook_secret", "");
+        return getString("gateways.stripe.webhook_secret", "");
     }
 
     public String getPayPalClientId() {
-        return config.getProperty("payment.paypal.client_id", "");
+        return getString("gateways.paypal.client_id", "");
     }
 
     public String getPayPalClientSecret() {
-        return config.getProperty("payment.paypal.client_secret", "");
+        return getString("gateways.paypal.client_secret", "");
     }
 
     public String getPayPalMode() {
-        return config.getProperty("payment.paypal.mode", "sandbox");
+        return getString("gateways.paypal.mode", "sandbox");
     }
 
     public String getWebApiUrl() {
-        return config.getProperty("web_api.url", "http://localhost:8080");
+        return getString("web_api.url", "http://localhost:3000");
     }
 
     public int getWebApiPort() {
-        return Integer.parseInt(config.getProperty("web_api.port", "8080"));
+        return getInt("web_api.port", 3000);
     }
 
-    public String getAdminRoleId() {
-        return config.getProperty("discord.admin_role_id", "");
+    public String getJwtSecret() {
+        return getString("web_api.auth.jwt_secret", "default_secret");
     }
 
-    public String getUserRoleId() {
-        return config.getProperty("discord.user_role_id", "");
+    public String getBotToken() {
+        return getString("bot.token", "");
     }
 
-    public String getDefaultCurrency() {
-        return config.getProperty("invoice.default_currency", "USD");
+    public String getBotName() {
+        return getString("bot.name", "KyverInvoices");
     }
 
-    public int getDefaultDueDays() {
-        return Integer.parseInt(config.getProperty("invoice.default_due_days", "30"));
+    public String getGuildId() {
+        return getString("bot.guild_id", "");
     }
 
     public String getInvoiceCategoryId() {
-        return config.getProperty("discord.invoice_category_id", "");
+        return getString("bot.invoice_category_id", "");
     }
 
-    public String getDatabaseType() {
-        return config.getProperty("database.type", "sqlite");
-    }
-
-    public String getString(String key, String defaultValue) {
-        return config.getProperty(key, defaultValue);
+    public String getInvoiceChannelId() {
+        return getString("bot.invoice_channel_id", "");
     }
 
     public Color getMainColor() {
-        String colorHex = config.getProperty("bot.main-color", "#E53935");
+        String colorHex = getString("bot.main-color", "#E53935");
         return Color.decode(colorHex);
     }
 
     public Color getSuccessColor() {
-        String colorHex = config.getProperty("bot.success-color", "#43A047");
+        String colorHex = getString("bot.success-color", "#43A047");
         return Color.decode(colorHex);
     }
 
     public Color getErrorColor() {
-        String colorHex = config.getProperty("bot.error-color", "#D32F2F");
+        String colorHex = getString("bot.error-color", "#D32F2F");
         return Color.decode(colorHex);
     }
 
-    public String getBotName() {
-        return config.getProperty("bot.name", "KyverInvoices");
-    }
-
     public Guild getGuild() {
-        String guildId = config.getProperty("bot.guild_id", "YOUR_GUILD_ID");
+        String guildId = getGuildId();
         if (guildId.equals("YOUR_GUILD_ID") || guildId.isEmpty()) {
             logger.warn("Guild ID not set in config, returning null");
             return null;
@@ -140,8 +192,8 @@ public class ConfigManager {
         return KyverInvoices.getJDA().getGuildById(guildId);
     }
 
-    public void reload() {
-        config.clear();
-        loadConfig();
+    public String getAdminRoleId() {
+        return getString("permissions.admin", "");
     }
 }
+
