@@ -5,6 +5,7 @@ import net.dv8tion.jda.api.entities.emoji.Emoji;
 import net.dv8tion.jda.api.interactions.components.ActionRow;
 import net.dv8tion.jda.api.interactions.components.buttons.Button;
 import net.dv8tion.jda.api.interactions.components.selections.StringSelectMenu;
+import net.kyver.invoices.data.DatabaseManager;
 import net.kyver.invoices.manager.ConfigManager;
 import net.kyver.invoices.manager.EmbedManager;
 import net.kyver.invoices.manager.LoggingManager;
@@ -36,7 +37,11 @@ public class DMService {
                     privateChannel.sendMessageEmbeds(embed)
                             .addComponents(ActionRow.of(paymentMenu))
                             .queue(
-                                message -> logger.info("Sent payment selection DM to user: " + user.getEffectiveName()),
+                                message -> {
+                                    invoice.setDmSelectionMessageId(message.getId());
+                                    DatabaseManager.getDataMethods().updateInvoice(invoice);
+                                    logger.info("Sent payment selection DM to user: " + user.getEffectiveName());
+                                },
                                 error -> logger.error("Failed to send payment selection DM to user: " + user.getEffectiveName(), error)
                             );
                 });
@@ -68,7 +73,11 @@ public class DMService {
                             .setEmbeds(embed)
                             .addComponents(buttons)
                             .queue(
-                                message -> logger.info("Sent payment ready DM to user: " + user.getEffectiveName()),
+                                message -> {
+                                    invoice.setDmPaymentMessageId(message.getId());
+                                    DatabaseManager.getDataMethods().updateInvoice(invoice);
+                                    logger.info("Sent payment ready DM to user: " + user.getEffectiveName());
+                                },
                                 error -> logger.error("Failed to send payment ready DM to user: " + user.getEffectiveName(), error)
                             );
                 });

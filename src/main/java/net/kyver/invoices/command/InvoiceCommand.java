@@ -12,18 +12,19 @@ import net.kyver.invoices.KyverInvoices;
 import net.kyver.invoices.data.DatabaseManager;
 import net.kyver.invoices.manager.ConfigManager;
 import net.kyver.invoices.manager.EmbedManager;
+import net.kyver.invoices.manager.LoggingManager;
 import net.kyver.invoices.model.Invoice;
 import net.kyver.invoices.enums.PaymentStatus;
 import net.kyver.invoices.service.ChannelService;
 import net.kyver.invoices.service.DMService;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 public class InvoiceCommand extends ListenerAdapter {
 
     private final JDA jda;
     private final ConfigManager config;
+    private static final LoggingManager logger = LoggingManager.getLogger(InvoiceCommand.class);
 
     public InvoiceCommand() {
         this.jda = KyverInvoices.getJDA();
@@ -109,7 +110,11 @@ public class InvoiceCommand extends ListenerAdapter {
 
                         channel.sendMessageEmbeds(channelEmbed)
                                 .addComponents(buttons)
-                                .queue();
+                                .queue(message -> {
+                                    invoice.setChannelMessageId(message.getId());
+                                    DatabaseManager.getDataMethods().updateInvoice(invoice);
+                                    logger.info("Stored channel message ID: " + message.getId());
+                                });
 
                         DMService.sendPaymentSelectionDM(targetUser, invoice);
 

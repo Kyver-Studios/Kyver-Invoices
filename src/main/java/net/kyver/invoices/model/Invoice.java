@@ -25,6 +25,10 @@ public class Invoice {
     private String paymentUrl;
     private String qrCodeData;
 
+    private String channelMessageId;
+    private String dmSelectionMessageId;
+    private String dmPaymentMessageId;
+
     public Invoice() {
         this.invoiceId = UUID.randomUUID();
         this.createdAt = LocalDateTime.now();
@@ -94,6 +98,15 @@ public class Invoice {
 
     public String getQrCodeData() { return qrCodeData; }
     public void setQrCodeData(String qrCodeData) { this.qrCodeData = qrCodeData; }
+
+    public String getChannelMessageId() { return channelMessageId; }
+    public void setChannelMessageId(String channelMessageId) { this.channelMessageId = channelMessageId; }
+
+    public String getDmSelectionMessageId() { return dmSelectionMessageId; }
+    public void setDmSelectionMessageId(String dmSelectionMessageId) { this.dmSelectionMessageId = dmSelectionMessageId; }
+
+    public String getDmPaymentMessageId() { return dmPaymentMessageId; }
+    public void setDmPaymentMessageId(String dmPaymentMessageId) { this.dmPaymentMessageId = dmPaymentMessageId; }
 
     public String getFormattedAmount() {
         return String.format("%.2f %s", amount, currency.toUpperCase());

@@ -259,8 +259,13 @@ public class WebhookHandler {
                 var allInvoices = dataManager.getAllInvoices();
                 for (Invoice invoice : allInvoices) {
                     if (externalPaymentId.equals(invoice.getExternalPaymentId())) {
-                        dataManager.updateInvoiceStatus(invoice.getInvoiceId(), status);
-                        logger.database("Updated invoice %s status to %s", invoice.getInvoiceId(), status);
+                        PaymentStatus oldStatus = invoice.getStatus();
+                        invoice.setStatus(status);
+                        dataManager.updateInvoice(invoice);
+
+                        logger.database("Updated invoice %s status from %s to %s", invoice.getInvoiceId(), oldStatus, status);
+
+                        updateDiscordMessages(invoice, status);
                         return;
                     }
                 }
@@ -269,6 +274,120 @@ public class WebhookHandler {
         } catch (Exception e) {
             logger.error("Failed to update invoice status", e);
         }
+    }
+
+    private void updateDiscordMessages(Invoice invoice, PaymentStatus status) {
+        try {
+            var jda = net.kyver.invoices.KyverInvoices.getJDA();
+            if (jda == null) return;
+
+            var user = jda.getUserById(invoice.getDiscordUserId());
+
+            var channel = jda.getTextChannelById(invoice.getChannelId());
+
+            switch (status) {
+                case PAID -> {
+                    if (channel != null && invoice.getChannelMessageId() != null) {
+                        updateChannelMessageForPayment(channel, invoice);
+                    }
+
+                    if (channel != null) {
+                        net.kyver.invoices.service.NotificationService.sendPaymentCompletedNotification(channel, invoice);
+                    }
+
+                    if (user != null) {
+                        net.kyver.invoices.service.DMService.sendPaymentCompletedDM(user, invoice);
+                    }
+
+                    logger.success("Updated Discord messages for completed payment: %s", invoice.getInvoiceId());
+                }
+
+                case FAILED -> {
+                    if (channel != null) {
+                        net.kyver.invoices.service.NotificationService.sendPaymentFailedNotification(
+                            channel, invoice, "Payment processing failed via webhook"
+                        );
+                    }
+
+                    logger.warn("Notified about failed payment: %s", invoice.getInvoiceId());
+                }
+
+                case REFUNDED -> {
+                    if (channel != null && invoice.getChannelMessageId() != null) {
+                        updateChannelMessageStatus(channel, invoice);
+                    }
+
+                    logger.info("Updated messages for refunded payment: %s", invoice.getInvoiceId());
+                }
+
+                default -> {
+                    if (channel != null && invoice.getChannelMessageId() != null) {
+                        updateChannelMessageStatus(channel, invoice);
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            logger.error("Failed to update Discord messages for invoice: " + invoice.getInvoiceId(), e);
+        }
+    }
+
+    private void updateChannelMessageForPayment(net.dv8tion.jda.api.entities.channel.concrete.TextChannel channel, Invoice invoice) {
+        try {
+            channel.retrieveMessageById(invoice.getChannelMessageId()).queue(message -> {
+                var embed = net.kyver.invoices.manager.EmbedManager.custom(channel.getGuild())
+                        .setColor(net.kyver.invoices.manager.EmbedManager.getSuccessColor())
+                        .setTitle("📧 Invoice #" + invoice.getInvoiceId().toString().substring(0, 8) + " - PAID ✅")
+                        .setDescription("**" + invoice.getDescription() + "**")
+                        .addField("Customer", invoice.getCustomerName(), true)
+                        .addField("Amount", invoice.getFormattedAmount(), true)
+                        .addField("Status", "✅ " + invoice.getStatus().toString(), true)
+                        .addField("Payment Method", invoice.getSelectedGateway().toString(), true)
+                        .addField("Completed", java.time.LocalDateTime.now().format(
+                            java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy 'at' HH:mm")
+                        ), true)
+                        .build();
+
+                message.editMessageEmbeds(embed).setComponents().queue();
+            }, error -> logger.error("Failed to update channel message: " + error.getMessage()));
+
+        } catch (Exception e) {
+            logger.error("Failed to update channel message for payment", e);
+        }
+    }
+
+    private void updateChannelMessageStatus(net.dv8tion.jda.api.entities.channel.concrete.TextChannel channel, Invoice invoice) {
+        try {
+            channel.retrieveMessageById(invoice.getChannelMessageId()).queue(message -> {
+                var embed = net.kyver.invoices.manager.EmbedManager.custom(channel.getGuild())
+                        .setTitle("📧 Invoice #" + invoice.getInvoiceId().toString().substring(0, 8))
+                        .setDescription("**" + invoice.getDescription() + "**")
+                        .addField("Customer", invoice.getCustomerName(), true)
+                        .addField("Amount", invoice.getFormattedAmount(), true)
+                        .addField("Status", getStatusEmoji(invoice.getStatus()) + " " + invoice.getStatus().toString(), true)
+                        .addField("Updated", java.time.LocalDateTime.now().format(
+                            java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy 'at' HH:mm")
+                        ), true)
+                        .build();
+
+                message.editMessageEmbeds(embed).queue();
+            }, error -> logger.error("Failed to update channel message status: " + error.getMessage()));
+
+        } catch (Exception e) {
+            logger.error("Failed to update channel message status", e);
+        }
+    }
+
+    private String getStatusEmoji(PaymentStatus status) {
+        return switch (status) {
+            case PENDING -> "⏳";
+            case PAID -> "✅";
+            case FAILED -> "❌";
+            case CANCELLED -> "🚫";
+            case REFUNDED -> "🔄";
+            case EXPIRED -> "⏰";
+            default -> "❓";
+        };
     }
 
     private String extractJsonValue(String json, String key) {
