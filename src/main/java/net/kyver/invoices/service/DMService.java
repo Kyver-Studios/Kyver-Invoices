@@ -152,8 +152,8 @@ public class DMService {
 
                 Button.danger(
                         "cancel-payment-" + invoice.getInvoiceId().toString(),
-                        "Cancel Payment"
-                ).withEmoji(Emoji.fromUnicode("🚫"))
+                        "Cancel"
+                )
         );
     }
 

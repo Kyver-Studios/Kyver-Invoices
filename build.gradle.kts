@@ -27,6 +27,7 @@ dependencies {
     implementation("org.yaml:snakeyaml:2.4")
 
     implementation("com.zaxxer:HikariCP:5.1.0")
+    implementation("org.xerial:sqlite-jdbc:3.45.1.0")
 
     implementation("com.stripe:stripe-java:29.4.0")
     implementation("com.paypal.sdk:rest-api-sdk:1.14.0")

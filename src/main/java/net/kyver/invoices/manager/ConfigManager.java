@@ -161,11 +161,7 @@ public class ConfigManager {
     }
 
     public String getInvoiceCategoryId() {
-        return getString("bot.invoice_category_id", "");
-    }
-
-    public String getInvoiceChannelId() {
-        return getString("bot.invoice_channel_id", "");
+        return getString("bot.invoice-category", "");
     }
 
     public Color getMainColor() {
@@ -196,4 +192,5 @@ public class ConfigManager {
         return getString("permissions.admin", "");
     }
 }
+
 

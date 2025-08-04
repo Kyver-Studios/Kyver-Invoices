@@ -8,6 +8,8 @@ import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.SubcommandData;
+import net.dv8tion.jda.api.interactions.components.ActionRow;
+import net.dv8tion.jda.api.interactions.components.buttons.Button;
 import net.kyver.invoices.KyverInvoices;
 import net.kyver.invoices.data.DatabaseManager;
 import net.kyver.invoices.manager.ConfigManager;
@@ -59,7 +61,7 @@ public class InvoiceCommand extends ListenerAdapter {
     }
 
     private void handleCreateInvoice(SlashCommandInteractionEvent event) {
-        event.deferReply().queue();
+        event.deferReply(true).queue(); // Make it ephemeral
 
         try {
             User targetUser = event.getOption("user", OptionMapping::getAsUser);
@@ -68,14 +70,22 @@ public class InvoiceCommand extends ListenerAdapter {
             String item = event.getOption("item", OptionMapping::getAsString);
 
             if (amount <= 0) {
-                event.getHook().editOriginal("❌ Amount must be greater than 0!")
-                        .queue();
+                var errorEmbed = EmbedManager.custom(event.getGuild())
+                        .setColor(EmbedManager.getErrorColor())
+                        .setTitle("❌ Invalid Amount")
+                        .setDescription("Amount must be greater than 0!")
+                        .build();
+                event.getHook().editOriginalEmbeds(errorEmbed).queue();
                 return;
             }
 
             if (targetUser == null) {
-                event.getHook().editOriginal("❌ Invalid user specified!")
-                        .queue();
+                var errorEmbed = EmbedManager.custom(event.getGuild())
+                        .setColor(EmbedManager.getErrorColor())
+                        .setTitle("❌ Invalid User")
+                        .setDescription("Please specify a valid user!")
+                        .build();
+                event.getHook().editOriginalEmbeds(errorEmbed).queue();
                 return;
             }
 
@@ -116,43 +126,64 @@ public class InvoiceCommand extends ListenerAdapter {
                                     logger.info("Stored channel message ID: " + message.getId());
                                 });
 
+                        // Send payment selection DM to user
                         DMService.sendPaymentSelectionDM(targetUser, invoice);
 
-                        event.getHook().editOriginal("✅ Invoice created successfully! Channel: " + channel.getAsMention() +
-                                "\nDM sent to " + targetUser.getAsMention() + " for payment method selection.")
-                                .queue();
+                        // Reply with a nice ephemeral message
+                        var successEmbed = EmbedManager.custom(event.getGuild())
+                                .setColor(EmbedManager.getSuccessColor())
+                                .setTitle("✅ Invoice Created Successfully!")
+                                .setDescription("Your invoice has been created and the payment process has been initiated.")
+                                .addField("📧 Invoice ID", "#" + invoice.getInvoiceId().toString().substring(0, 8), true)
+                                .addField("👤 Customer", targetUser.getAsMention(), true)
+                                .addField("💰 Amount", invoice.getFormattedAmount(), true)
+                                .addField("📝 Description", invoice.getDescription(), false)
+                                .addField("🏢 Channel", channel.getAsMention(), true)
+                                .addField("📱 Next Steps", "The customer will receive a DM to select their payment method", false)
+                                .setFooter("Use the channel buttons to manage this invoice", null)
+                                .build();
+
+                        event.getHook().editOriginalEmbeds(successEmbed).queue();
 
                     })
                     .exceptionally(throwable -> {
-                        KyverInvoices.getLogger().error("Failed to create invoice channel", throwable);
-                        event.getHook().editOriginal("❌ Failed to create invoice channel: " + throwable.getMessage())
-                                .queue();
+                        logger.error("Failed to create invoice channel", throwable);
+                        var errorEmbed = EmbedManager.custom(event.getGuild())
+                                .setColor(EmbedManager.getErrorColor())
+                                .setTitle("❌ Channel Creation Failed")
+                                .setDescription("Failed to create invoice channel: " + throwable.getMessage())
+                                .build();
+                        event.getHook().editOriginalEmbeds(errorEmbed).queue();
                         return null;
                     });
 
         } catch (Exception e) {
-            KyverInvoices.getLogger().error("Failed to create invoice", e);
-            event.getHook().editOriginal("❌ Failed to create invoice: " + e.getMessage())
-                    .queue();
+            logger.error("Failed to create invoice", e);
+            var errorEmbed = EmbedManager.custom(event.getGuild())
+                    .setColor(EmbedManager.getErrorColor())
+                    .setTitle("❌ Invoice Creation Failed")
+                    .setDescription("Failed to create invoice: " + e.getMessage())
+                    .build();
+            event.getHook().editOriginalEmbeds(errorEmbed).queue();
         }
     }
 
-    private net.dv8tion.jda.api.interactions.components.ActionRow createInvoiceChannelButtons(Invoice invoice) {
-        return net.dv8tion.jda.api.interactions.components.ActionRow.of(
-                net.dv8tion.jda.api.interactions.components.buttons.Button.primary(
+    private ActionRow createInvoiceChannelButtons(Invoice invoice) {
+        return ActionRow.of(
+                Button.primary(
                         "resend-dm-" + invoice.getInvoiceId().toString(),
-                        "Resend DM"
-                ).withEmoji(net.dv8tion.jda.api.entities.emoji.Emoji.fromUnicode("📧")),
+                        "Send DM"
+                ),
 
-                net.dv8tion.jda.api.interactions.components.buttons.Button.secondary(
+                Button.secondary(
                         "refresh-status-" + invoice.getInvoiceId().toString(),
-                        "Refresh Status"
-                ).withEmoji(net.dv8tion.jda.api.entities.emoji.Emoji.fromUnicode("🔄")),
+                        "Refresh"
+                ),
 
-                net.dv8tion.jda.api.interactions.components.buttons.Button.danger(
+                Button.danger(
                         "cancel-invoice-" + invoice.getInvoiceId().toString(),
                         "Cancel"
-                ).withEmoji(net.dv8tion.jda.api.entities.emoji.Emoji.fromUnicode("❌"))
+                )
         );
     }
 }

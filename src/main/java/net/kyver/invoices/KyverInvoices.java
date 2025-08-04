@@ -45,9 +45,9 @@ public class KyverInvoices {
             paymentManager = PaymentManager.getInstance();
 
             logger.info("Connecting to Discord...");
-            String token = System.getenv("DISCORD_TOKEN");
+            String token = configManager.getBotToken();
             if (token == null || token.isEmpty()) {
-                logger.error("Discord token not found! Set DISCORD_TOKEN environment variable.");
+                logger.error("Discord token not found! Please set it in config.yml");
                 return;
             }
 

@@ -2,9 +2,12 @@ package net.kyver.invoices.handler;
 
 import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
+import net.dv8tion.jda.api.entities.emoji.Emoji;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.StringSelectInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.interactions.components.ActionRow;
+import net.dv8tion.jda.api.interactions.components.buttons.Button;
 import net.kyver.invoices.data.DatabaseManager;
 import net.kyver.invoices.enums.PaymentGateway;
 import net.kyver.invoices.enums.PaymentStatus;
@@ -56,6 +59,8 @@ public class ComponentHandler extends ListenerAdapter {
             handleRecreateInvoice(event);
         } else if (componentId.startsWith("delete-invoice-")) {
             handleDeleteInvoice(event);
+        } else if (componentId.startsWith("delete-channel-")) {
+            handleDeleteChannel(event);
         }
     }
 
@@ -76,7 +81,7 @@ public class ComponentHandler extends ListenerAdapter {
             PaymentGateway gateway = PaymentGateway.valueOf(selectedMethod.toUpperCase());
             invoice.setSelectedGateway(gateway);
 
-            paymentManager.createPaymentLink(invoice.getInvoiceId(), gateway).thenAccept(paymentUrl -> {
+            paymentManager.createPaymentLink(invoiceId, gateway).thenAccept(paymentUrl -> {
                 invoice.setPaymentUrl(paymentUrl);
 
                 try {
@@ -88,9 +93,15 @@ public class ComponentHandler extends ListenerAdapter {
 
                     DMService.sendPaymentReadyDM(event.getUser(), invoice, qrCodeData);
 
-                    TextChannel channel = event.getJDA().getTextChannelById(invoice.getChannelId());
-                    if (channel != null) {
-                        NotificationService.sendPaymentReadyNotification(channel, invoice);
+                    if (invoice.getChannelId() != null && !invoice.getChannelId().isEmpty()) {
+                        TextChannel channel = event.getJDA().getTextChannelById(invoice.getChannelId());
+                        if (channel != null) {
+                            NotificationService.sendPaymentReadyNotification(channel, invoice);
+                        } else {
+                            logger.warn("Channel not found for invoice: " + invoice.getChannelId());
+                        }
+                    } else {
+                        logger.warn("No channel ID set for invoice: " + invoice.getInvoiceId());
                     }
 
                 } catch (Exception e) {
@@ -190,7 +201,12 @@ public class ComponentHandler extends ListenerAdapter {
 
             Invoice invoice = DatabaseManager.getDataMethods().getInvoice(invoiceId);
             if (invoice == null) {
-                event.reply("❌ Invoice not found!").setEphemeral(true).queue();
+                var errorEmbed = EmbedManager.custom(event.getGuild())
+                        .setColor(EmbedManager.getErrorColor())
+                        .setTitle("❌ Invoice Not Found")
+                        .setDescription("The invoice could not be found in the database.")
+                        .build();
+                event.replyEmbeds(errorEmbed).setEphemeral(true).queue();
                 return;
             }
 
@@ -198,24 +214,49 @@ public class ComponentHandler extends ListenerAdapter {
             DatabaseManager.getDataMethods().updateInvoice(invoice);
 
             var embed = EmbedManager.custom(event.getGuild())
-                    .setTitle("📧 Invoice #" + invoice.getInvoiceId().toString().substring(0, 8))
+                    .setColor(EmbedManager.getErrorColor())
+                    .setTitle("📧 Invoice #" + invoice.getInvoiceId().toString().substring(0, 8) + " - CANCELLED")
                     .setDescription("**" + invoice.getDescription() + "**")
+                    .addField("Customer", invoice.getCustomerName(), true)
                     .addField("Amount", invoice.getFormattedAmount(), true)
-                    .addField("Status", getStatusEmoji(invoice.getStatus()) + " " + invoice.getStatus().toString(), true)
+                    .addField("Status", "🚫 " + invoice.getStatus().toString(), true)
+                    .addField("Cancelled By", event.getUser().getAsMention(), true)
+                    .addField("Cancelled", java.time.LocalDateTime.now().format(
+                        java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy 'at' HH:mm")
+                    ), true)
                     .build();
 
-            event.getMessage().editMessageEmbeds(embed).setComponents().queue();
+            var cancelledButtons = ActionRow.of(
+                    Button.danger(
+                            "delete-channel-" + invoice.getInvoiceId().toString(),
+                            "Delete Channel"
+                    ).withEmoji(net.dv8tion.jda.api.entities.emoji.Emoji.fromUnicode("🗑️"))
+            );
+
+            event.getMessage().editMessageEmbeds(embed).setComponents(cancelledButtons).queue();
 
             User user = event.getJDA().getUserById(invoice.getDiscordUserId());
             if (user != null) {
                 DMService.sendPaymentCancelledDM(user, invoice);
             }
 
-            event.reply("❌ Invoice cancelled by admin").queue();
+            var successEmbed = EmbedManager.custom(event.getGuild())
+                    .setColor(EmbedManager.getErrorColor())
+                    .setTitle("🚫 Invoice Cancelled")
+                    .setDescription("Invoice has been cancelled by admin. User has been notified.")
+                    .addField("Invoice ID", "#" + invoice.getInvoiceId().toString().substring(0, 8), true)
+                    .addField("Customer", invoice.getCustomerName(), true)
+                    .build();
+            event.replyEmbeds(successEmbed).setEphemeral(true).queue();
 
         } catch (Exception e) {
             logger.error("Error cancelling invoice", e);
-            event.reply("❌ Failed to cancel invoice").setEphemeral(true).queue();
+            var errorEmbed = EmbedManager.custom(event.getGuild())
+                    .setColor(EmbedManager.getErrorColor())
+                    .setTitle("❌ Cancellation Failed")
+                    .setDescription("Failed to cancel invoice: " + e.getMessage())
+                    .build();
+            event.replyEmbeds(errorEmbed).setEphemeral(true).queue();
         }
     }
 
@@ -245,22 +286,45 @@ public class ComponentHandler extends ListenerAdapter {
 
             Invoice invoice = DatabaseManager.getDataMethods().getInvoice(invoiceId);
             if (invoice == null) {
-                event.reply("❌ Invoice not found!").setEphemeral(true).queue();
+                var errorEmbed = EmbedManager.custom()
+                        .setColor(EmbedManager.getErrorColor())
+                        .setTitle("❌ Invoice Not Found")
+                        .setDescription("The invoice could not be found in the database.")
+                        .build();
+                event.replyEmbeds(errorEmbed).setEphemeral(true).queue();
                 return;
             }
 
+            event.reply("🚫 Payment cancelled successfully.").setEphemeral(true).queue();
+
+            invoice.setStatus(PaymentStatus.CANCELLED);
+            DatabaseManager.getDataMethods().updateInvoice(invoice);
+
             event.getMessage().delete().queue();
 
-            TextChannel channel = event.getJDA().getTextChannelById(invoice.getChannelId());
-            if (channel != null) {
-                NotificationService.sendPaymentCancelledByUserNotification(channel, invoice, event.getUser());
+            if (invoice.getChannelId() != null && !invoice.getChannelId().isEmpty()) {
+                TextChannel channel = event.getJDA().getTextChannelById(invoice.getChannelId());
+                if (channel != null) {
+                    NotificationService.sendPaymentCancelledByUserNotification(channel, invoice, event.getUser());
+                } else {
+                    logger.warn("Channel not found for invoice: " + invoice.getChannelId());
+                }
+            } else {
+                logger.warn("No channel ID set for invoice: " + invoice.getInvoiceId());
             }
 
             DMService.sendPaymentCancelledDM(event.getUser(), invoice);
 
         } catch (Exception e) {
             logger.error("Error cancelling payment", e);
-            event.reply("❌ Failed to cancel payment").setEphemeral(true).queue();
+            if (!event.isAcknowledged()) {
+                var errorEmbed = EmbedManager.custom()
+                        .setColor(EmbedManager.getErrorColor())
+                        .setTitle("❌ Cancellation Failed")
+                        .setDescription("Failed to cancel payment. Please try again or contact support.")
+                        .build();
+                event.replyEmbeds(errorEmbed).setEphemeral(true).queue();
+            }
         }
     }
 
@@ -317,8 +381,12 @@ public class ComponentHandler extends ListenerAdapter {
 
             DatabaseManager.getDataMethods().deleteInvoice(invoiceId);
 
-            TextChannel channel = event.getChannel().asTextChannel();
-            channel.delete().reason("Invoice deleted by admin").queue();
+            if (event.getChannel().getType().isGuild()) {
+                TextChannel channel = event.getChannel().asTextChannel();
+                channel.delete().reason("Invoice deleted by admin").queue();
+            } else {
+                event.reply("✅ Invoice deleted. (This was a DM, channel not deleted.)").setEphemeral(true).queue();
+            }
 
         } catch (Exception e) {
             logger.error("Error deleting invoice", e);
@@ -326,22 +394,31 @@ public class ComponentHandler extends ListenerAdapter {
         }
     }
 
-    private net.dv8tion.jda.api.interactions.components.ActionRow createInvoiceChannelButtons(Invoice invoice) {
-        return net.dv8tion.jda.api.interactions.components.ActionRow.of(
-                net.dv8tion.jda.api.interactions.components.buttons.Button.primary(
+    private void handleDeleteChannel(ButtonInteractionEvent event) {
+        try {
+            event.getChannel().delete().queue();
+        } catch (Exception e) {
+            logger.error("Error deleting channel", e);
+            event.reply("❌ Failed to delete channel").setEphemeral(true).queue();
+        }
+    }
+
+    private ActionRow createInvoiceChannelButtons(Invoice invoice) {
+        return ActionRow.of(
+                Button.primary(
                         "resend-dm-" + invoice.getInvoiceId().toString(),
                         "Resend DM"
-                ).withEmoji(net.dv8tion.jda.api.entities.emoji.Emoji.fromUnicode("📧")),
+                ).withEmoji(Emoji.fromUnicode("📧")),
 
-                net.dv8tion.jda.api.interactions.components.buttons.Button.secondary(
+                Button.secondary(
                         "refresh-status-" + invoice.getInvoiceId().toString(),
                         "Refresh Status"
-                ).withEmoji(net.dv8tion.jda.api.entities.emoji.Emoji.fromUnicode("🔄")),
+                ).withEmoji(Emoji.fromUnicode("🔄")),
 
-                net.dv8tion.jda.api.interactions.components.buttons.Button.danger(
+                Button.danger(
                         "cancel-invoice-" + invoice.getInvoiceId().toString(),
                         "Cancel"
-                ).withEmoji(net.dv8tion.jda.api.entities.emoji.Emoji.fromUnicode("❌"))
+                ).withEmoji(Emoji.fromUnicode("❌"))
         );
     }
 
