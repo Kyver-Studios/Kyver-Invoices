@@ -122,33 +122,56 @@ public class ComponentHandler extends ListenerAdapter {
 
     private void handleResendDM(ButtonInteractionEvent event) {
         try {
+            event.deferReply(true).queue();
+
             String invoiceIdStr = event.getComponentId().replace("resend-dm-", "");
             UUID invoiceId = UUID.fromString(invoiceIdStr);
 
             Invoice invoice = DatabaseManager.getDataMethods().getInvoice(invoiceId);
             if (invoice == null) {
-                event.reply("❌ Invoice not found!").setEphemeral(true).queue();
+                event.getHook().editOriginal("❌ Invoice not found!").queue();
                 return;
             }
 
             User user = event.getJDA().getUserById(invoice.getDiscordUserId());
             if (user == null) {
-                event.reply("❌ User not found!").setEphemeral(true).queue();
+                event.getHook().editOriginal("❌ User not found!").queue();
                 return;
             }
 
             if (invoice.getSelectedGateway() == null) {
-                DMService.sendPaymentSelectionDM(user, invoice);
+                DMService.sendPaymentSelectionDM(user, invoice).thenRun(() -> {
+                    event.getHook().editOriginal("✅ DM resent to " + user.getAsMention()).queue();
+                }).exceptionally(throwable -> {
+                    logger.error("Failed to send DM", throwable);
+                    event.getHook().editOriginal("❌ Failed to send DM").queue();
+                    return null;
+                });
             } else if (invoice.getPaymentUrl() != null) {
-                byte[] qrCodeData = QRCodeService.generateQRCode(invoice.getPaymentUrl());
-                DMService.sendPaymentReadyDM(user, invoice, qrCodeData);
+                try {
+                    byte[] qrCodeData = QRCodeService.generateQRCode(invoice.getPaymentUrl());
+                    DMService.sendPaymentReadyDM(user, invoice, qrCodeData).thenRun(() -> {
+                        event.getHook().editOriginal("✅ DM resent to " + user.getAsMention()).queue();
+                    }).exceptionally(throwable -> {
+                        logger.error("Failed to send DM", throwable);
+                        event.getHook().editOriginal("❌ Failed to send DM").queue();
+                        return null;
+                    });
+                } catch (Exception e) {
+                    logger.error("Failed to generate QR code", e);
+                    event.getHook().editOriginal("❌ Failed to generate QR code").queue();
+                }
+            } else {
+                event.getHook().editOriginal("❌ No payment information available to resend").queue();
             }
-
-            event.reply("✅ DM resent to " + user.getAsMention()).setEphemeral(true).queue();
 
         } catch (Exception e) {
             logger.error("Error resending DM", e);
-            event.reply("❌ Failed to resend DM").setEphemeral(true).queue();
+            if (!event.isAcknowledged()) {
+                event.reply("❌ Failed to resend DM").setEphemeral(true).queue();
+            } else {
+                event.getHook().editOriginal("❌ Failed to resend DM").queue();
+            }
         }
     }
 

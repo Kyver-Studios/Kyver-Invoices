@@ -1,6 +1,8 @@
 package net.kyver.invoices.command;
 
 import net.dv8tion.jda.api.JDA;
+import net.dv8tion.jda.api.entities.Member;
+import net.dv8tion.jda.api.entities.Role;
 import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
@@ -51,6 +53,16 @@ public class InvoiceCommand extends ListenerAdapter {
     public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
         if (!event.getName().equals("invoice")) return;
 
+        if (!hasPermission(event)) {
+            var errorEmbed = EmbedManager.custom(event.getGuild())
+                    .setColor(EmbedManager.getErrorColor())
+                    .setTitle("❌ Access Denied")
+                    .setDescription("You don't have permission to use this command.")
+                    .build();
+            event.reply("").addEmbeds(errorEmbed).setEphemeral(true).queue();
+            return;
+        }
+
         String subcommand = event.getSubcommandName();
         if (subcommand == null) return;
 
@@ -60,8 +72,29 @@ public class InvoiceCommand extends ListenerAdapter {
         }
     }
 
+    private boolean hasPermission(SlashCommandInteractionEvent event) {
+        if (event.getGuild() == null || event.getMember() == null) {
+            return false;
+        }
+
+        Member member = event.getMember();
+        String adminRoleId = config.getAdminRoleId();
+
+        if (adminRoleId.isEmpty() || adminRoleId.equals("ADMIN_ROLE_ID")) {
+            logger.warn("Admin role ID not configured properly in config.yml");
+            return false;
+        }
+
+        Role adminRole = event.getGuild().getRoleById(adminRoleId);
+        if (adminRole != null && member.getRoles().contains(adminRole)) {
+            return true;
+        }
+
+        return false;
+    }
+
     private void handleCreateInvoice(SlashCommandInteractionEvent event) {
-        event.deferReply(true).queue(); // Make it ephemeral
+        event.deferReply(true).queue();
 
         try {
             User targetUser = event.getOption("user", OptionMapping::getAsUser);
@@ -126,10 +159,8 @@ public class InvoiceCommand extends ListenerAdapter {
                                     logger.info("Stored channel message ID: " + message.getId());
                                 });
 
-                        // Send payment selection DM to user
                         DMService.sendPaymentSelectionDM(targetUser, invoice);
 
-                        // Reply with a nice ephemeral message
                         var successEmbed = EmbedManager.custom(event.getGuild())
                                 .setColor(EmbedManager.getSuccessColor())
                                 .setTitle("✅ Invoice Created Successfully!")

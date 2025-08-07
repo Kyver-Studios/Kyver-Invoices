@@ -191,6 +191,8 @@ public class ConfigManager {
     public String getAdminRoleId() {
         return getString("permissions.admin", "");
     }
+
+    public String getUserRoleId() {
+        return getString("permissions.user", "");
+    }
 }
-
-

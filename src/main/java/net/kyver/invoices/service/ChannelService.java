@@ -62,43 +62,47 @@ public class ChannelService {
 
     private static void setupChannelPermissions(TextChannel channel, User user, Guild guild) {
         try {
-            channel.getManager().putPermissionOverride(
-                guild.getPublicRole(),
-                null,
-                EnumSet.of(Permission.VIEW_CHANNEL)
-            ).queue();
+            channel.upsertPermissionOverride(guild.getPublicRole())
+                    .deny(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND)
+                    .queue();
+
+            String userRoleId = config.getUserRoleId();
+            if (userRoleId != null && !userRoleId.trim().isEmpty() && !userRoleId.equals("USER_ROLE_ID")) {
+                Role userRole = guild.getRoleById(userRoleId);
+                if (userRole != null) {
+                    channel.upsertPermissionOverride(userRole)
+                            .deny(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND)
+                            .queue();
+                }
+            }
 
             Member member = guild.getMember(user);
             if (member != null) {
-                channel.getManager().putPermissionOverride(
-                        member,
-                        EnumSet.of(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND, Permission.MESSAGE_HISTORY),
-                        null
-                ).queue();
+                channel.upsertPermissionOverride(member)
+                        .grant(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND, Permission.MESSAGE_HISTORY)
+                        .queue();
             } else {
                 logger.warn("Could not find member for user " + user.getName() + " in guild");
             }
 
             String adminRoleId = config.getAdminRoleId();
-            if (adminRoleId != null && !adminRoleId.trim().isEmpty()) {
+            if (adminRoleId != null && !adminRoleId.trim().isEmpty() && !adminRoleId.equals("ADMIN_ROLE_ID")) {
                 Role adminRole = guild.getRoleById(adminRoleId);
                 if (adminRole != null) {
-                    channel.getManager().putPermissionOverride(
-                        adminRole,
-                        EnumSet.of(
-                            Permission.VIEW_CHANNEL,
-                            Permission.MESSAGE_SEND,
-                            Permission.MESSAGE_HISTORY,
-                            Permission.MANAGE_CHANNEL,
-                            Permission.MESSAGE_MANAGE
-                        ),
-                        null
-                    ).queue();
+                    channel.upsertPermissionOverride(adminRole)
+                            .grant(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND, Permission.MESSAGE_HISTORY)
+                            .queue();
+                } else {
+                    logger.warn("Admin role not found with ID: " + adminRoleId);
                 }
+            } else {
+                logger.warn("Admin role ID not configured properly in config.yml");
             }
 
+            logger.info("Successfully set up private channel permissions for invoice channel: " + channel.getName());
+
         } catch (Exception e) {
-            logger.warn("Failed to set up channel permissions: " + e.getMessage());
+            logger.error("Failed to set up channel permissions: " + e.getMessage(), e);
         }
     }
 
